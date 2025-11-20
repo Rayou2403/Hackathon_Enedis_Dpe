@@ -6,11 +6,9 @@ import src.data_prep as data_prep
 import src.features as features
 import src.models as models
 
-
-
 st.set_page_config(
     page_title="Hackathon DPE x Enedis",
-    page_icon="📊",
+    page_icon="💡",
     layout="wide",
 )
 
@@ -33,12 +31,6 @@ def get_feat_df():
 def get_model():
     return models.load_model()
 
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
 
 # ----------------------------- FILTRES GLOBAUX ----------------------
 def filtre_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -86,14 +78,6 @@ def filtre_df(df: pd.DataFrame) -> pd.DataFrame:
     return df_filt
 
 
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-
-
 # ----------------------------- PAGES --------------------------------
 def page_intro():
     st.title("Hackathon – DPE & consommations électriques")
@@ -102,11 +86,19 @@ def page_intro():
     df = get_feat_df()
     nb_logements_base = len(df_base)
     nb_logements = len(df)
-    nb_adresses = df_base["address_ban"].nunique() if "address_ban" in df_base.columns else None
+    nb_adresses = (
+        df_base["address_ban"].nunique() if "address_ban" in df_base.columns else None
+    )
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Logements Enedis x DPE (brut)", f"{nb_logements_base:,}".replace(",", " "))
-    col2.metric("Logements utilisables (après nettoyage conso)", f"{nb_logements:,}".replace(",", " "))
+    col1.metric(
+        "Logements Enedis x DPE (brut)",
+        f"{nb_logements_base:,}".replace(",", " "),
+    )
+    col2.metric(
+        "Logements utilisables (après nettoyage conso)",
+        f"{nb_logements:,}".replace(",", " "),
+    )
     if nb_adresses is not None:
         col3.metric("Adresses uniques", f"{nb_adresses:,}".replace(",", " "))
 
@@ -126,19 +118,10 @@ def page_intro():
         """
     )
 
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
 
 def page_dpe_vs_reel():
-    import plotly.express as px
+    st.header("📊 DPE vs consommation réelle")
 
-    st.header("DPE vs consommation réelle")
-
-    # --- Chargement + filtres globaux ---
     df_all = get_feat_df()
     df = filtre_df(df_all)
 
@@ -148,50 +131,36 @@ def page_dpe_vs_reel():
 
     st.caption(f"Sous-échantillon courant : **{len(df):,} logements**".replace(",", " "))
 
-    # -------------------------------
-    # 1) MENU DÉROULANT D’ADRESSES
-    # -------------------------------
-    if "address_ban" in df.columns:
-        addresses = ["Toutes les adresses"] + sorted(df["address_ban"].dropna().unique())
-        adresse_choice = st.selectbox("Adresse :", options=addresses)
-    else:
-        adresse_choice = "Toutes les adresses"
-
-    # Filtrage par adresse
-    if adresse_choice != "Toutes les adresses":
-        df_addr = df[df["address_ban"] == adresse_choice]
-    else:
-        df_addr = df
-
-    if df_addr.empty:
-        st.warning("Aucune donnée pour cette adresse.")
-        return
-
-    # -------------------------------
-    # 2) STATISTIQUES PRINCIPALES
-    # -------------------------------
-    stats = features.compute_dpe_vs_real_stats(df_addr)
+    stats = features.compute_dpe_vs_real_stats(df)
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Biais moyen (réel - DPE)",
-                f"{stats.biais_moyen_kwh:,.0f} kWh/an/logement".replace(",", " "))
-    col2.metric("Écart-type",
-                f"{stats.std_biais_kwh:,.0f} kWh/an/logement".replace(",", " "))
-    col3.metric("Ratio réel / DPE",
-                f"{stats.ratio_moyen:.2f}")
+    col1.metric(
+        "Biais moyen (réel - DPE)",
+        f"{stats.biais_moyen_kwh:,.0f} kWh/an/logement".replace(",", " "),
+    )
+    col2.metric(
+        "Écart-type des écarts",
+        f"{stats.std_biais_kwh:,.0f} kWh/an/logement".replace(",", " "),
+    )
+    col3.metric(
+        "Ratio moyen réel / DPE",
+        f"{stats.ratio_moyen:.2f}",
+    )
 
     st.markdown("### Comment interpréter ?")
-    st.markdown(features.summarize_subset(df_addr))
+    st.markdown(features.summarize_subset(df))
 
-    with st.expander("Résumé statistique global"):
+    with st.expander(
+        "Résumé statistique global (toutes colonnes de consommation)", expanded=False
+    ):
         st.dataframe(stats.global_stats)
 
-    # -------------------------------
-    # 3) HISTOGRAMME DES ÉCARTS
-    # -------------------------------
+    # Histogramme des écarts
+    import plotly.express as px
+
     st.markdown("### Distribution des écarts (réel - DPE)")
     fig_hist = px.histogram(
-        df_addr,
+        df,
         x="ecart_kwh_logement",
         nbins=40,
         labels={"ecart_kwh_logement": "Écart (kWh/an/logement)"},
@@ -199,35 +168,6 @@ def page_dpe_vs_reel():
     )
     st.plotly_chart(fig_hist, use_container_width=True)
 
-    # -------------------------------
-    # 4) SCATTER REAL vs DPE
-    # -------------------------------
-    st.markdown("### Nuage de points : conso réelle vs conso DPE")
-
-    marker_size = 6 if adresse_choice == "Toutes les adresses" else 12
-
-    fig_scatter = px.scatter(
-        df_addr,
-        x="conso_dpe_kwh",
-        y="conso_reelle_kwh",
-        color="etiquette_dpe" if "etiquette_dpe" in df_addr.columns else None,
-        opacity=0.7,
-        size_max=marker_size,
-        labels={
-            "conso_dpe_kwh": "Conso DPE (kWh/an)",
-            "conso_reelle_kwh": "Conso réelle (kWh/an)",
-        },
-        title=(
-            "Conso réelle vs DPE (toutes adresses)"
-            if adresse_choice == "Toutes les adresses"
-            else f"Conso réelle vs DPE — {adresse_choice}"
-        ),
-    )
-    st.plotly_chart(fig_scatter, use_container_width=True)
-
-    # -------------------------------
-    # 5) TABLEAUX CATÉGORIELS
-    # -------------------------------
     st.subheader("Par classe DPE")
     st.dataframe(stats.by_dpe, use_container_width=True)
 
@@ -238,18 +178,8 @@ def page_dpe_vs_reel():
     st.dataframe(stats.by_periode, use_container_width=True)
 
 
-
-
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-
-
 def page_impact_dpe():
-    st.header("Impact d'un changement de classe DPE")
+    st.header("💶 Impact d'un changement de classe DPE")
 
     df_all = get_feat_df()
     df = filtre_df(df_all)
@@ -258,7 +188,7 @@ def page_impact_dpe():
         st.warning("Aucune donnée ne correspond aux filtres choisis.")
         return
 
-    st.caption(f"Sous-échantillon courant : **{len(df):,} logements**".replace(",", " "))
+    st.caption(f"Sous-échantillon courant : **{len[df]:,} logements**".replace(",", " "))
 
     # Tableau de conso moyenne par classe
     st.subheader("Consommation réelle moyenne par classe DPE")
@@ -332,7 +262,7 @@ def page_impact_dpe():
     )
 
     conso_perso = st.number_input(
-        "Si tu connais ta consommation actuelle (kWh/an), saisis-la :",  # optionnel
+        "Si tu connais ta consommation actuelle (kWh/an), saisis-la :",
         min_value=0.0,
         step=100.0,
         format="%.0f",
@@ -346,7 +276,7 @@ def page_impact_dpe():
 
 
 def page_prediction_ml():
-    st.header("Prédiction de la consommation réelle")
+    st.header("🤖 Prédiction de la consommation réelle")
 
     df = get_feat_df()
     model_obj = get_model()
@@ -368,11 +298,6 @@ def page_prediction_ml():
         sorted(df["type_batiment"].dropna().unique())
         if "type_batiment" in df.columns
         else ["Maison", "Appartement", "Autre"]
-    )
-    periodes = (
-        sorted(df["periode_construction"].dropna().unique())
-        if "periode_construction" in df.columns
-        else ["Avant 1948", "1949-1974", "1975-1989", "1990-2004", "Depuis 2005"]
     )
     regions = (
         df["code_region"].dropna().astype("Int64").astype(str).sort_values().unique()
@@ -406,56 +331,60 @@ def page_prediction_ml():
         with col2:
             etiquette_dpe = st.selectbox("Classe DPE", options=classes)
             type_batiment = st.selectbox("Type de bâtiment", options=types)
-            periode_construction = st.selectbox(
-                "Période de construction", options=periodes
-            )
             code_region = st.selectbox("Code région (INSEE)", options=regions)
 
         submitted = st.form_submit_button("Prédire la consommation")
 
-    if submitted:
-        user_data = {
-            "conso_dpe_kwh": conso_dpe_kwh,
-            "surface_habitable": surface_habitable,
-            "annee_construction": annee_construction,
-            "etiquette_dpe": etiquette_dpe,
-            "type_batiment": type_batiment,
-            "periode_construction": periode_construction,
-            "code_region": code_region,
-        }
+        if submitted:
+            # code_region vient du selectbox sous forme de chaîne ("11", "76", ...)
+            # On le convertit en nombre pour être cohérent avec les données d'entraînement
+            try:
+                code_region_num = float(code_region)
+            except Exception:
+                code_region_num = None
 
-        y_pred = models.predict_conso(model_obj, user_data)
-        st.success(
-            f"Consommation réelle estimée : **{y_pred:,.0f} kWh/an**".replace(",", " ")
-        )
+            user_data = {
+                "conso_dpe_kwh": conso_dpe_kwh,
+                "surface_habitable": surface_habitable,
+                "annee_construction": annee_construction,
+                "etiquette_dpe": etiquette_dpe,
+                "type_batiment": type_batiment,
+                "code_region": code_region_num,
+            }
 
-        if conso_dpe_kwh > 0:
-            diff = y_pred - conso_dpe_kwh
-            pct = diff / conso_dpe_kwh * 100
-            st.write(
-                f"Écart par rapport à la valeur DPE : **{diff:,+.0f} kWh/an** "
-                f"({pct:+.1f} %).".replace(",", " ")
+            # On prédit systématiquement, quelle que soit la valeur du DPE
+            y_pred = models.predict_conso(model_obj, user_data)
+            st.success(
+                f"Consommation réelle estimée : **{y_pred:,.0f} kWh/an**".replace(",", " ")
             )
 
-        prix_kwh = 0.20
-        facture_estimee = y_pred * prix_kwh
-        st.write(
-            f"Facture annuelle estimée (à {prix_kwh:.2f} €/kWh) : "
-            f"**{facture_estimee:,.0f} €**".replace(",", " ")
-        )
+            # Si la valeur DPE est renseignée (>0), on affiche aussi l'écart
+            if conso_dpe_kwh > 0:
+                diff = y_pred - conso_dpe_kwh
+                pct = diff / conso_dpe_kwh * 100
+                st.write(
+                    f"Écart par rapport à la valeur DPE : **{diff:,.0f} kWh/an** "
+                    f"({pct:+.1f} %).".replace(",", " ")
+                )
 
-        st.markdown(
-            """
-            Cette estimation repose sur les consommations réelles observées sur des logements
-            similaires (type, région, période de construction, classe DPE, etc.).
-            Elle peut donc différer de la valeur indiquée sur ton DPE, qui est calculée de
-            manière conventionnelle.
-            """
-        )
+            prix_kwh = 0.20
+            facture_estimee = y_pred * prix_kwh
+            st.write(
+                f"Facture annuelle estimée (à {prix_kwh:.2f} €/kWh) : "
+                f"**{facture_estimee:,.0f} €**".replace(",", " ")
+            )
 
+            st.markdown(
+                """
+                Cette estimation repose sur les consommations réelles observées sur des logements
+                similaires (type, région, période de construction, classe DPE, etc.).
+                Elle peut donc différer de la valeur indiquée sur ton DPE, qui est calculée de
+                manière conventionnelle.
+                """
+            )
 
 def page_dataviz():
-    st.header("Datavisualisation")
+    st.header("📈 Datavisualisation")
 
     import plotly.express as px
 
@@ -502,27 +431,27 @@ def page_dataviz():
 def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
-        "",
+        "Aller à :",
         [
-            "Introduction",
-            "DPE vs conso réelle",
-            "Impact d'un changement de classe DPE",
-            "Prédiction ML",
-            "Datavisualisation",
+            "🏠 Introduction",
+            "📊 DPE vs conso réelle",
+            "💶 Impact d'un changement de classe DPE",
+            "🤖 Prédiction ML",
+            "📈 Datavisualisation",
         ],
     )
 
-    if page == "Introduction":
+    if page == "🏠 Introduction":
         page_intro()
-    elif page == "DPE vs conso réelle":
+    elif page == "📊 DPE vs conso réelle":
         page_dpe_vs_reel()
-    elif page == "Impact d'un changement de classe DPE":
+    elif page == "💶 Impact d'un changement de classe DPE":
         page_impact_dpe()
-    elif page == "Prédiction ML":
+    elif page == "🤖 Prédiction ML":
         page_prediction_ml()
-    elif page == "Datavisualisation":
+    elif page == "📈 Datavisualisation":
         page_dataviz()
-
 
 if __name__ == "__main__":
     main()
+
