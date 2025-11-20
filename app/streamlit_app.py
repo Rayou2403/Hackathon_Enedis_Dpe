@@ -6,11 +6,9 @@ import src.data_prep as data_prep
 import src.features as features
 import src.models as models
 
-
-
 st.set_page_config(
     page_title="Hackathon DPE x Enedis",
-    page_icon="📊",
+    page_icon="💡",
     layout="wide",
 )
 
@@ -33,12 +31,6 @@ def get_feat_df():
 def get_model():
     return models.load_model()
 
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
-# ===========================================================================================
 
 # ----------------------------- FILTRES GLOBAUX ----------------------
 def filtre_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -131,11 +123,19 @@ def page_intro():
     df = get_feat_df()
     nb_logements_base = len(df_base)
     nb_logements = len(df)
-    nb_adresses = df_base["address_ban"].nunique() if "address_ban" in df_base.columns else None
+    nb_adresses = (
+        df_base["address_ban"].nunique() if "address_ban" in df_base.columns else None
+    )
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Logements Enedis x DPE (brut)", f"{nb_logements_base:,}".replace(",", " "))
-    col2.metric("Logements utilisables (après nettoyage conso)", f"{nb_logements:,}".replace(",", " "))
+    col1.metric(
+        "Logements Enedis x DPE (brut)",
+        f"{nb_logements_base:,}".replace(",", " "),
+    )
+    col2.metric(
+        "Logements utilisables (après nettoyage conso)",
+        f"{nb_logements:,}".replace(",", " "),
+    )
     if nb_adresses is not None:
         col3.metric("Adresses uniques", f"{nb_adresses:,}".replace(",", " "))
 
@@ -708,11 +708,6 @@ def page_prediction_ml():
         if "type_batiment" in df.columns
         else ["Maison", "Appartement", "Autre"]
     )
-    periodes = (
-        sorted(df["periode_construction"].dropna().unique())
-        if "periode_construction" in df.columns
-        else ["Avant 1948", "1949-1974", "1975-1989", "1990-2004", "Depuis 2005"]
-    )
     regions = (
         df["code_region"].dropna().astype("Int64").astype(str).sort_values().unique()
         if "code_region" in df.columns
@@ -745,52 +740,57 @@ def page_prediction_ml():
         with col2:
             etiquette_dpe = st.selectbox("Classe DPE", options=classes)
             type_batiment = st.selectbox("Type de bâtiment", options=types)
-            periode_construction = st.selectbox(
-                "Période de construction", options=periodes
-            )
             code_region = st.selectbox("Code région (INSEE)", options=regions)
 
         submitted = st.form_submit_button("Prédire la consommation")
 
-    if submitted:
-        user_data = {
-            "conso_dpe_kwh": conso_dpe_kwh,
-            "surface_habitable": surface_habitable,
-            "annee_construction": annee_construction,
-            "etiquette_dpe": etiquette_dpe,
-            "type_batiment": type_batiment,
-            "periode_construction": periode_construction,
-            "code_region": code_region,
-        }
+        if submitted:
+            # code_region vient du selectbox sous forme de chaîne ("11", "76", ...)
+            # On le convertit en nombre pour être cohérent avec les données d'entraînement
+            try:
+                code_region_num = float(code_region)
+            except Exception:
+                code_region_num = None
 
-        y_pred = models.predict_conso(model_obj, user_data)
-        st.success(
-            f"Consommation réelle estimée : **{y_pred:,.0f} kWh/an**".replace(",", " ")
-        )
+            user_data = {
+                "conso_dpe_kwh": conso_dpe_kwh,
+                "surface_habitable": surface_habitable,
+                "annee_construction": annee_construction,
+                "etiquette_dpe": etiquette_dpe,
+                "type_batiment": type_batiment,
+                "code_region": code_region_num,
+            }
 
-        if conso_dpe_kwh > 0:
-            diff = y_pred - conso_dpe_kwh
-            pct = diff / conso_dpe_kwh * 100
-            st.write(
-                f"Écart par rapport à la valeur DPE : **{diff:,+.0f} kWh/an** "
-                f"({pct:+.1f} %).".replace(",", " ")
+            # On prédit systématiquement, quelle que soit la valeur du DPE
+            y_pred = models.predict_conso(model_obj, user_data)
+            st.success(
+                f"Consommation réelle estimée : **{y_pred:,.0f} kWh/an**".replace(",", " ")
             )
 
-        prix_kwh = 0.20
-        facture_estimee = y_pred * prix_kwh
-        st.write(
-            f"Facture annuelle estimée (à {prix_kwh:.2f} €/kWh) : "
-            f"**{facture_estimee:,.0f} €**".replace(",", " ")
-        )
+            # Si la valeur DPE est renseignée (>0), on affiche aussi l'écart
+            if conso_dpe_kwh > 0:
+                diff = y_pred - conso_dpe_kwh
+                pct = diff / conso_dpe_kwh * 100
+                st.write(
+                    f"Écart par rapport à la valeur DPE : **{diff:,.0f} kWh/an** "
+                    f"({pct:+.1f} %).".replace(",", " ")
+                )
 
-        st.markdown(
-            """
-            Cette estimation repose sur les consommations réelles observées sur des logements
-            similaires (type, région, période de construction, classe DPE, etc.).
-            Elle peut donc différer de la valeur indiquée sur ton DPE, qui est calculée de
-            manière conventionnelle.
-            """
-        )
+            prix_kwh = 0.20
+            facture_estimee = y_pred * prix_kwh
+            st.write(
+                f"Facture annuelle estimée (à {prix_kwh:.2f} €/kWh) : "
+                f"**{facture_estimee:,.0f} €**".replace(",", " ")
+            )
+
+            st.markdown(
+                """
+                Cette estimation repose sur les consommations réelles observées sur des logements
+                similaires (type, région, période de construction, classe DPE, etc.).
+                Elle peut donc différer de la valeur indiquée sur ton DPE, qui est calculée de
+                manière conventionnelle.
+                """
+            )
 
 
 
@@ -798,7 +798,7 @@ def page_prediction_ml():
 def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
-        "",
+        "Aller à :",
         [
             "Introduction",
             "DPE vs Conso réelle",
@@ -816,6 +816,6 @@ def main():
     elif page == "Prédiction ML":
         page_prediction_ml()
 
-
 if __name__ == "__main__":
     main()
+
