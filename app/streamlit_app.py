@@ -6,6 +6,8 @@ import src.data_prep as data_prep
 import src.features as features
 import src.models as models
 
+
+
 st.set_page_config(
     page_title="Hackathon DPE x Enedis",
     page_icon="📊",
@@ -31,6 +33,12 @@ def get_feat_df():
 def get_model():
     return models.load_model()
 
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
 
 # ----------------------------- FILTRES GLOBAUX ----------------------
 def filtre_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -78,6 +86,14 @@ def filtre_df(df: pd.DataFrame) -> pd.DataFrame:
     return df_filt
 
 
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+
+
 # ----------------------------- PAGES --------------------------------
 def page_intro():
     st.title("Hackathon – DPE & consommations électriques")
@@ -110,10 +126,19 @@ def page_intro():
         """
     )
 
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
 
 def page_dpe_vs_reel():
+    import plotly.express as px
+
     st.header("DPE vs consommation réelle")
 
+    # --- Chargement + filtres globaux ---
     df_all = get_feat_df()
     df = filtre_df(df_all)
 
@@ -123,36 +148,50 @@ def page_dpe_vs_reel():
 
     st.caption(f"Sous-échantillon courant : **{len(df):,} logements**".replace(",", " "))
 
-    stats = features.compute_dpe_vs_real_stats(df)
+    # -------------------------------
+    # 1) MENU DÉROULANT D’ADRESSES
+    # -------------------------------
+    if "address_ban" in df.columns:
+        addresses = ["Toutes les adresses"] + sorted(df["address_ban"].dropna().unique())
+        adresse_choice = st.selectbox("Adresse :", options=addresses)
+    else:
+        adresse_choice = "Toutes les adresses"
+
+    # Filtrage par adresse
+    if adresse_choice != "Toutes les adresses":
+        df_addr = df[df["address_ban"] == adresse_choice]
+    else:
+        df_addr = df
+
+    if df_addr.empty:
+        st.warning("Aucune donnée pour cette adresse.")
+        return
+
+    # -------------------------------
+    # 2) STATISTIQUES PRINCIPALES
+    # -------------------------------
+    stats = features.compute_dpe_vs_real_stats(df_addr)
 
     col1, col2, col3 = st.columns(3)
-    col1.metric(
-        "Biais moyen (réel - DPE)",
-        f"{stats.biais_moyen_kwh:,.0f} kWh/an/logement".replace(",", " "),
-    )
-    col2.metric(
-        "Écart-type des écarts",
-        f"{stats.std_biais_kwh:,.0f} kWh/an/logement".replace(",", " "),
-    )
-    col3.metric(
-        "Ratio moyen réel / DPE",
-        f"{stats.ratio_moyen:.2f}",
-    )
+    col1.metric("Biais moyen (réel - DPE)",
+                f"{stats.biais_moyen_kwh:,.0f} kWh/an/logement".replace(",", " "))
+    col2.metric("Écart-type",
+                f"{stats.std_biais_kwh:,.0f} kWh/an/logement".replace(",", " "))
+    col3.metric("Ratio réel / DPE",
+                f"{stats.ratio_moyen:.2f}")
 
     st.markdown("### Comment interpréter ?")
-    st.markdown(features.summarize_subset(df))
+    st.markdown(features.summarize_subset(df_addr))
 
-    with st.expander(
-        "Résumé statistique global (toutes colonnes de consommation)", expanded=False
-    ):
+    with st.expander("Résumé statistique global"):
         st.dataframe(stats.global_stats)
 
-    # Histogramme des écarts
-    import plotly.express as px
-
+    # -------------------------------
+    # 3) HISTOGRAMME DES ÉCARTS
+    # -------------------------------
     st.markdown("### Distribution des écarts (réel - DPE)")
     fig_hist = px.histogram(
-        df,
+        df_addr,
         x="ecart_kwh_logement",
         nbins=40,
         labels={"ecart_kwh_logement": "Écart (kWh/an/logement)"},
@@ -160,6 +199,35 @@ def page_dpe_vs_reel():
     )
     st.plotly_chart(fig_hist, use_container_width=True)
 
+    # -------------------------------
+    # 4) SCATTER REAL vs DPE
+    # -------------------------------
+    st.markdown("### Nuage de points : conso réelle vs conso DPE")
+
+    marker_size = 6 if adresse_choice == "Toutes les adresses" else 12
+
+    fig_scatter = px.scatter(
+        df_addr,
+        x="conso_dpe_kwh",
+        y="conso_reelle_kwh",
+        color="etiquette_dpe" if "etiquette_dpe" in df_addr.columns else None,
+        opacity=0.7,
+        size_max=marker_size,
+        labels={
+            "conso_dpe_kwh": "Conso DPE (kWh/an)",
+            "conso_reelle_kwh": "Conso réelle (kWh/an)",
+        },
+        title=(
+            "Conso réelle vs DPE (toutes adresses)"
+            if adresse_choice == "Toutes les adresses"
+            else f"Conso réelle vs DPE — {adresse_choice}"
+        ),
+    )
+    st.plotly_chart(fig_scatter, use_container_width=True)
+
+    # -------------------------------
+    # 5) TABLEAUX CATÉGORIELS
+    # -------------------------------
     st.subheader("Par classe DPE")
     st.dataframe(stats.by_dpe, use_container_width=True)
 
@@ -168,6 +236,16 @@ def page_dpe_vs_reel():
 
     st.subheader("Par période de construction")
     st.dataframe(stats.by_periode, use_container_width=True)
+
+
+
+
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
+# ===========================================================================================
 
 
 def page_impact_dpe():
@@ -424,7 +502,7 @@ def page_dataviz():
 def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
-        "Aller à :",
+        "",
         [
             "Introduction",
             "DPE vs conso réelle",
