@@ -1,0 +1,9 @@
+pandas
+numpy
+scikit-learn == 1.5.2
+joblib
+streamlit
+plotly
+matplotlib
+tqdm
+requests
