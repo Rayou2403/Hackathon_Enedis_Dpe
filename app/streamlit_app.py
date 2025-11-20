@@ -32,80 +32,6 @@ def get_model():
     return models.load_model()
 
 
-# ----------------------------- FILTRES GLOBAUX ----------------------
-def filtre_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Application des filtres globaux affichés dans la sidebar."""
-
-    st.sidebar.title("Filtres globaux")
-    df_filt = df.copy()
-
-    # -----------------------------------------------------
-    # 1) Région
-    # -----------------------------------------------------
-    if "code_region" in df.columns:
-        regions = (
-            df["code_region"].dropna()
-            .astype("Int64").astype(str)
-            .sort_values().unique()
-        )
-
-        region_choice = st.sidebar.multiselect(
-            "Région (code INSEE)",
-            options=list(regions),
-            default=list(regions)
-        )
-
-        df_filt = df_filt[
-            df_filt["code_region"].astype("Int64").astype(str).isin(region_choice)
-        ]
-
-    # -----------------------------------------------------
-    # 2) Type de bâtiment
-    # -----------------------------------------------------
-    if "type_batiment" in df.columns:
-        types = sorted(df["type_batiment"].dropna().unique())
-
-        type_choice = st.sidebar.multiselect(
-            "Type de bâtiment",
-            options=types,
-            default=types
-        )
-
-        df_filt = df_filt[df_filt["type_batiment"].isin(type_choice)]
-
-    # -----------------------------------------------------
-    # 3) Période de construction
-    # -----------------------------------------------------
-    if "periode_construction" in df.columns:
-        periodes = sorted(df["periode_construction"].dropna().unique())
-
-        periode_choice = st.sidebar.multiselect(
-            "Période de construction",
-            options=periodes,
-            default=periodes
-        )
-
-        df_filt = df_filt[df_filt["periode_construction"].isin(periode_choice)]
-
-    # -----------------------------------------------------
-    # 4) Classe DPE
-    # -----------------------------------------------------
-    if "etiquette_dpe" in df.columns:
-        ordre = list("ABCDEFG")
-        classes_presentes = sorted(df["etiquette_dpe"].dropna().unique())
-        options = [c for c in ordre if c in classes_presentes]
-
-        classe_choice = st.sidebar.multiselect(
-            "Classe DPE",
-            options=options,
-            default=options
-        )
-
-        df_filt = df_filt[df_filt["etiquette_dpe"].isin(classe_choice)]
-
-    return df_filt
-
-
 
 # ===========================================================================================
 # ===========================================================================================
@@ -117,43 +43,71 @@ def filtre_df(df: pd.DataFrame) -> pd.DataFrame:
 
 # ----------------------------- PAGES --------------------------------
 def page_intro():
-    st.title("Hackathon – DPE & consommations électriques")
+    st.title("Analyse DPE & Consommations Réelles — Enedis")
 
     df_base = get_base_df()
     df = get_feat_df()
     nb_logements_base = len(df_base)
     nb_logements = len(df)
     nb_adresses = (
-        df_base["address_ban"].nunique() if "address_ban" in df_base.columns else None
+        df_base["address_ban"].nunique()
+        if "address_ban" in df_base.columns
+        else None
     )
 
+    # ---- KPI ----
     col1, col2, col3 = st.columns(3)
     col1.metric(
-        "Logements Enedis x DPE (brut)",
+        "Logements appariés DPE × Enedis (brut)",
         f"{nb_logements_base:,}".replace(",", " "),
     )
     col2.metric(
-        "Logements utilisables (après nettoyage conso)",
+        "Logements exploitables (après nettoyage)",
         f"{nb_logements:,}".replace(",", " "),
     )
     if nb_adresses is not None:
-        col3.metric("Adresses uniques", f"{nb_adresses:,}".replace(",", " "))
+        col3.metric("Adresses uniques (BAN)", f"{nb_adresses:,}".replace(",", " "))
 
+    # ---- CONTEXTE ----
     st.markdown(
         """
-        Cette application répond à deux questions principales :
+        Cette application a été développée dans le cadre du **Hackathon Enedis — DPE & énergie**,
+        afin de mieux comprendre les écarts entre les diagnostics théoriques et les usages
+        observés sur le réseau.
 
-        1. **Montrer l’écart** entre la consommation prédite par le **DPE**
-           et la consommation électrique **réelle** mesurée par Enedis.
-        2. **Évaluer le gain financier moyen** sur la facture d’électricité
-           lorsqu’on passe d’une **classe énergétique DPE** à une autre
-           (par exemple de G à F, de E à C, etc.).
+        Elle s’appuie sur deux jeux de données :
+        - les **consommations réelles** issues des données Enedis,
+        - les informations du **Diagnostic de Performance Énergétique (DPE)**,
+        appariées via la Base Adresse Nationale (BAN).
 
-        Les filtres à gauche permettent de se restreindre à un type de logements
-        (région, type de bâtiment, période, classe DPE). Toutes les statistiques
-        sont recalculées sur ce sous-échantillon.
+        ---
+        ### Objectifs de l’outil
+        L’interface permet d'explorer trois axes :
+
+        1. **Comparer la consommation réelle** à la consommation estimée par le **DPE**.  
+           Cela met en évidence les écarts structurels entre modèle conventionnel et usage réel.
+
+        2. **Analyser l’impact d’un changement de classe énergétique**  
+           (ex : passer de **G → F**, ou **E → C**),  
+           en estimant :
+           - la baisse attendue de consommation réelle,
+           - l’économie financière correspondante.
+
+        3. **Prédire la consommation réelle d’un logement**,  
+           grâce à un modèle de Machine Learning entraîné sur des centaines de milliers de logements.
+
+        ---
+        ### Utilisation
+        Les filtres situés dans la colonne de gauche permettent de se restreindre à :
+        - une **région**,  
+        - un **type de bâtiment** (maison / appartement),  
+        - une **période de construction**,  
+        - une **classe DPE**.
+
+        Toutes les statistiques et visualisations s’adaptent en temps réel au périmètre sélectionné.
         """
     )
+
 
 # ===========================================================================================
 # ===========================================================================================
@@ -692,12 +646,26 @@ def page_prediction_ml():
 
     st.markdown(
         """
-        Renseigne les informations de ton logement pour estimer
-        sa **consommation réelle** à partir d'un modèle entraîné
-        sur les données Enedis x DPE.
+        Cette interface permet d’estimer la **consommation réelle d’un logement**
+        à partir des caractéristiques déclarées et des données observées dans le réseau
+        Enedis.
+
+        Le modèle repose sur plusieurs millions de relevés de consommation
+        et sur les informations issues des Diagnostics de Performance Énergétique (DPE).
+        Il fournit une estimation **plus proche des usages réels** que la valeur
+        théorique du DPE, qui est calculée de manière conventionnelle.
+
+        Renseignez les informations du logement ci-dessous afin d’obtenir :
+
+        • une estimation de la consommation annuelle réelle  
+        • l’écart par rapport à la valeur indiquée sur le DPE  
+        • une estimation indicative de la facture énergétique annuelle
+
         """
     )
 
+
+    # Listes des options
     classes = (
         sorted(df["etiquette_dpe"].dropna().unique())
         if "etiquette_dpe" in df.columns
@@ -709,13 +677,20 @@ def page_prediction_ml():
         else ["Maison", "Appartement", "Autre"]
     )
     regions = (
-        df["code_region"].dropna().astype("Int64").astype(str).sort_values().unique()
+        df["code_region"]
+        .dropna()
+        .astype("Int64")
+        .astype(str)
+        .sort_values()
+        .unique()
         if "code_region" in df.columns
         else ["11"]
     )
 
+    # Formulaire utilisateur
     with st.form("form_prediction"):
         col1, col2 = st.columns(2)
+
         with col1:
             conso_dpe_kwh = st.number_input(
                 "Consommation estimée par le DPE (kWh/an)",
@@ -737,6 +712,7 @@ def page_prediction_ml():
                 value=1975,
                 step=1,
             )
+
         with col2:
             etiquette_dpe = st.selectbox("Classe DPE", options=classes)
             type_batiment = st.selectbox("Type de bâtiment", options=types)
@@ -745,12 +721,8 @@ def page_prediction_ml():
         submitted = st.form_submit_button("Prédire la consommation")
 
         if submitted:
-            # code_region vient du selectbox sous forme de chaîne ("11", "76", ...)
-            # On le convertit en nombre pour être cohérent avec les données d'entraînement
-            try:
-                code_region_num = float(code_region)
-            except Exception:
-                code_region_num = None
+            # Toujours STRING (fixe définitivement le bug sklearn)
+            code_region_clean = str(code_region)
 
             user_data = {
                 "conso_dpe_kwh": conso_dpe_kwh,
@@ -758,26 +730,30 @@ def page_prediction_ml():
                 "annee_construction": annee_construction,
                 "etiquette_dpe": etiquette_dpe,
                 "type_batiment": type_batiment,
-                "code_region": code_region_num,
+                "code_region": code_region_clean,
             }
 
-            # On prédit systématiquement, quelle que soit la valeur du DPE
+            # Prédiction robuste
             y_pred = models.predict_conso(model_obj, user_data)
+
             st.success(
                 f"Consommation réelle estimée : **{y_pred:,.0f} kWh/an**".replace(",", " ")
             )
 
-            # Si la valeur DPE est renseignée (>0), on affiche aussi l'écart
+            # Affichage écart vs DPE
             if conso_dpe_kwh > 0:
                 diff = y_pred - conso_dpe_kwh
                 pct = diff / conso_dpe_kwh * 100
+
                 st.write(
-                    f"Écart par rapport à la valeur DPE : **{diff:,.0f} kWh/an** "
-                    f"({pct:+.1f} %).".replace(",", " ")
+                    f"Écart par rapport à la valeur DPE : "
+                    f"**{diff:,.0f} kWh/an** ({pct:+.1f} %).".replace(",", " ")
                 )
 
+            # Facture estimée
             prix_kwh = 0.20
             facture_estimee = y_pred * prix_kwh
+
             st.write(
                 f"Facture annuelle estimée (à {prix_kwh:.2f} €/kWh) : "
                 f"**{facture_estimee:,.0f} €**".replace(",", " ")
@@ -787,8 +763,8 @@ def page_prediction_ml():
                 """
                 Cette estimation repose sur les consommations réelles observées sur des logements
                 similaires (type, région, période de construction, classe DPE, etc.).
-                Elle peut donc différer de la valeur indiquée sur ton DPE, qui est calculée de
-                manière conventionnelle.
+                Elle peut donc différer de la valeur indiquée sur ton DPE, qui est calculée
+                de manière conventionnelle.
                 """
             )
 
@@ -796,9 +772,9 @@ def page_prediction_ml():
 
 # ----------------------------- NAVIGATION ---------------------------
 def main():
-    st.sidebar.title("Navigation")
+    st.sidebar.title("Tableau de bord")
     page = st.sidebar.radio(
-        "Aller à :",
+        "",
         [
             "Introduction",
             "DPE vs Conso réelle",
