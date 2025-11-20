@@ -469,7 +469,6 @@ def page_impact_dpe():
         """
         st.markdown(html, unsafe_allow_html=True)
 
-
     # ---------- TITRE ----------
     st.header("Impact d’un changement de classe DPE — Évaluation du gain énergétique")
 
@@ -552,23 +551,32 @@ def page_impact_dpe():
 
     classes_valides = [c for c in list("ABCDEFG") if c in classes_pres]
 
+    if len(classes_valides) < 2:
+        st.warning("Pas assez de classes disponibles pour simuler un changement.")
+        return
+
     col1, col2, col3 = st.columns(3)
 
     classe_depart = col1.selectbox("Classe actuelle :", classes_valides)
 
     idx = classes_valides.index(classe_depart)
-    classe_arrivee = col2.selectbox("Classe visée :", classes_valides, index=max(0, idx - 1))
-
-    prix_kwh = col3.number_input(
-        "Prix électricité (€/kWh)", min_value=0.05, max_value=1.0, value=0.20
+    classe_arrivee = col2.selectbox(
+        "Classe visée :", classes_valides, index=max(0, idx - 1)
     )
 
-    if classes_valides.index(classe_arrivee) >= classes_valides.index(classe_depart):
-        st.warning("La classe visée doit être meilleure.")
-        return
+    prix_kwh = col3.number_input(
+        "Prix électricité (€/kWh)",
+        min_value=0.05,
+        max_value=1.0,
+        value=0.20,
+        step=0.01,
+    )
 
-    # ---------- CALCUL ----------
-    res = features.gain_entre_classes(df, classe_depart, classe_arrivee)
+    # Vérification logique (A est meilleure que B, etc.)
+    ordre_dpe = list("ABCDEFG")
+    if ordre_dpe.index(classe_arrivee) >= ordre_dpe.index(classe_depart):
+        st.warning("La classe visée doit être meilleure (plus proche de A).")
+        return
 
     # ---------- CALCUL ----------
     res = features.gain_entre_classes(df, classe_depart, classe_arrivee)
@@ -588,8 +596,8 @@ def page_impact_dpe():
 
     conso_avant = res["conso_depart"]
     conso_apres = res["conso_arrivee"]
-    gain_kwh = res["gain_kwh"]
-    gain_euros = gain_kwh * prix_kwh
+    gain_kwh = res["gain_kwh"]          # kWh/an économisés (moyenne)
+    gain_euros = gain_kwh * prix_kwh    # €/an économisés
 
     # ---------- KPI ----------
     st.subheader("Résultats de la simulation")
@@ -621,16 +629,73 @@ def page_impact_dpe():
         name="Après rénovation"
     ))
 
-
     fig.update_layout(
         title="Comparaison des consommations (kWh/an)",
-        barmode="group", height=250,
+        barmode="group",
+        height=250,
         template="plotly_white",
         xaxis_title="kWh/an",
         margin=dict(l=10, r=10, t=40, b=10)
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+    # ---------- ANALYSE ÉCONOMIQUE / RENTABILITÉ ----------
+    st.markdown("---")
+    st.subheader("Analyse économique")
+
+    # Hypothèse : coût de rénovation énergétique par m²
+    # On demande la surface pour adapter l'ordre de grandeur
+    col_surf, col_info = st.columns([1, 1.5])
+
+    with col_surf:
+        surface = st.number_input(
+            "Surface du logement (m²)",
+            min_value=10.0,
+            max_value=500.0,
+            value=80.0,
+            step=5.0,
+        )
+
+    # Nombre de classes gagnées (ex : G -> E = 1, G -> C = 3, etc.)
+    nb_classes_gagnees = (
+        ordre_dpe.index(classe_depart) - ordre_dpe.index(classe_arrivee)
+    )
+
+    # Coût au m² : ordre de grandeur selon l'ampleur de la rénovation
+    # 1 classe : ~300 €/m² ; 2 classes : ~350 €/m² ; 3+ classes : ~400 €/m²
+    if nb_classes_gagnees <= 1:
+        cout_m2 = 300.0
+    elif nb_classes_gagnees == 2:
+        cout_m2 = 350.0
+    else:
+        cout_m2 = 400.0
+
+    cout_travaux = surface * cout_m2  # en €
+
+    with col_info:
+        st.caption(
+            f"Ordre de grandeur utilisé : **~{cout_m2:.0f} € / m²** "
+            f"pour un gain de **{nb_classes_gagnees} classe(s)**."
+        )
+
+    # Temps de retour sur investissement
+    if gain_euros > 0:
+        roi_annees = cout_travaux / gain_euros
+    else:
+        roi_annees = None
+
+    c4, c5, c6 = st.columns(3)
+    with c4:
+        kpi("Coût estimé des travaux", f"{cout_travaux:,.0f} €")
+    with c5:
+        kpi("Économie annuelle estimée", f"{gain_euros:,.0f} €/an")
+    with c6:
+        if (roi_annees is not None) and (roi_annees < 1000):
+            kpi("Temps de retour estimé", f"{roi_annees:,.1f} ans")
+        else:
+            kpi("Temps de retour estimé", "Non pertinent")
+
 
 # ==========================================================================================
 # ==========================================================================================
