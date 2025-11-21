@@ -67,4 +67,6 @@ Les différents notebooks présent `notebooks/`, contiennent les scripts qui per
 
 **05** - Fais le matching entre nos 2 bases sur les adresses et les années de dernière modification du DPE.
 
+**08** - Code lié au modèle de prédiction.
+
 ---
